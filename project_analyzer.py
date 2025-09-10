@@ -1,8 +1,9 @@
 # Это главный модуль
-from pathlib import Path
+
 from module_analyzer import ModuleAnalyzer
 from import_analyzer import ImportAnalyzer
 from report_generator import ReportGenerator
+from file_scanner import FileScanner
 
 class ProjectAnalyzer:
     def __init__(self):
@@ -10,7 +11,7 @@ class ProjectAnalyzer:
         self.modules_info: dict = {}
         self.analysis_results: dict = {} 
         self.import_graph = None # TODO - 10.09.2025 пока не знаю какой будет тип данных
-        self.file_scanner = None # TODO - 10.09.2025 пока не знаю какой будет тип данных
+        self.file_scanner = FileScanner(self.project_path)
         self.module_analyzer = ModuleAnalyzer()
         self.import_analyzer = ImportAnalyzer()
         self.report_generator = ReportGenerator()
