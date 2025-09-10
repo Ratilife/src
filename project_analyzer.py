@@ -16,4 +16,7 @@ class ProjectAnalyzer:
         self.import_analyzer = ImportAnalyzer()
         self.report_generator = ReportGenerator()
 
-        
+
+    def _scan_project_files(self):
+        self.modules_info = self.file_scanner.get_modules()
+             
