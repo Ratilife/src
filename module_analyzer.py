@@ -1,10 +1,15 @@
+import ast
+from typing import Optional
+
 class ModuleAnalyzer:
     #TODO ⌛ в разработке: 17.09.2025 
     def __init__(self):
         self.current_module_path: str =""       # путь к текущему анализируемому модулю
         self.current_module_name: str =""       # имя текущего модуля (извлечено из пути)
-        #AST дерево текущего модуля (результат ast.parse)
-        self.module_ast = None                  #TODO 17.09.2025  пока не знаю какой будет тип данных
+        self.module_ast: Optional[ast.Module] =  ast.Module(
+                                                       body=[], 
+                                                       type_ignores=[]
+                                                    )    #AST дерево текущего модуля (результат ast.parse)
         self.classes_info: dict = {}            #словарь с информацией о всех классах в модуле
         self.module_level_imports: list =[]     #список всех импортов на уровне модуля
         self.analysis_errors:list =[]           #список ошибок, возникших при анализе
