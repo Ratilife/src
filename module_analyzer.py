@@ -33,3 +33,12 @@ class ModuleAnalyzer:
         return self.module_level_imports
 
     #Конец Публичные методы   
+
+    #Приватные методы для работы с AST
+
+    def _parse_module_file(file_path):
+        pass
+
+    
+
+    #Конец Приватные методы для работы с AST
