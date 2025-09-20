@@ -19,9 +19,9 @@ class ProjectAnalyzer:
 
     def _scan_project_files(self):
         """находит все Python файлы в проекте"""
-
         self.modules_info = self.file_scanner.get_modules()
              
     def _analyze_modules(self):
         """анализирует содержимое каждого найденного модуля"""
-                
+        for value in self.modules_info.values():
+            self.module_analyzer.analyze_module(value)

@@ -1,6 +1,7 @@
 import ast
+from pathlib import Path
 from typing import Optional
-
+from analyzer import Analyzer
 class ModuleAnalyzer:
     #TODO ⌛ в разработке: 17.09.2025 
     def __init__(self):
@@ -18,7 +19,7 @@ class ModuleAnalyzer:
 
     def analyze_module(self, module_path:str):
         """главный метод, анализирует один модуль полностью"""
-        pass
+        self._parse_module_file(module_path)
 
     def get_module_info(self):
         """возвращает всю собранную информацию о модуле"""
@@ -36,9 +37,14 @@ class ModuleAnalyzer:
 
     #Приватные методы для работы с AST
 
-    def _parse_module_file(file_path):
-        pass
+    def _parse_module_file(self, file_path: str)->None:
+        #TODO ⌛ в разработке: 20.09.2025
 
+        name_module = Path(file_path).name
+        with open(file_path, "r", encoding="utf-8") as f:
+            tree = ast.parse(f.read(), filename=name_module)
+        analyzer = Analyzer()
+        analyzer.visit(tree)
     
 
     #Конец Приватные методы для работы с AST
