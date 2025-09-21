@@ -4,6 +4,8 @@ from module_analyzer import ModuleAnalyzer
 from import_analyzer import ImportAnalyzer
 from report_generator import ReportGenerator
 from file_scanner import FileScanner
+from working_in_multithreading import ThreadPool
+
 
 class ProjectAnalyzer:
     def __init__(self):
@@ -21,7 +23,10 @@ class ProjectAnalyzer:
         """находит все Python файлы в проекте"""
         self.modules_info = self.file_scanner.get_modules()
              
-    def _analyze_modules(self):
+    def _analyze_modules(self)->None:
         """анализирует содержимое каждого найденного модуля"""
+        multi_work = ThreadPool()
         for value in self.modules_info.values():
-            self.module_analyzer.analyze_module(value)
+            multi_work.start_work(value, self.module_analyzer.analyze_module) 
+
+        multi_work.end_work()    
