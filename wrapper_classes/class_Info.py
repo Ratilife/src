@@ -1,4 +1,4 @@
-class FunctionInfo:
-    def __init__(self, name, args):
+class ClassInfo:
+    def __init__(self, name):
         self.name = name
-        self.args = args
+        self.methods = []
