@@ -2,20 +2,20 @@ from typing import List, Dict, Any, Optional, Set
 
 class VariableInfo:
     def __init__(self, name):
-        self.name = name
-        self.type = None
+        self.name = name        # Имя
+        self.type = None        # Тип    
         self.type_annotation = None  # статические аннотации типов
-        self.scope = None  # 'global', 'local', 'class', 'instance'
-        self.access_modifier = None  # 'public', 'protected', 'private'
+        self.scope = None  # масштаб: 'global', 'local', 'class', 'instance'
+        self.access_modifier = None  # модификатор доступа: 'public', 'protected', 'private'
         
         # Жизненный цикл
-        self.declaration_location = None  # (file, line, module)
-        self.initialization_location = None  # (file, line, module)
+        self.declaration_location = None  # местонахождение (file, line, module)
+        self.initialization_location = None  # местоположение инициализации (file, line, module)
         self.usage_scope = []  # области где используется
         self.lifetime_info = {}
         
         # Использование
-        self.usage_count = 0
+        self.usage_count = 0    # Счетчик показывает, сколько раз переменная была прочитана или изменена
         self.operations = []  # список операций
         self.usage_pattern = None  # 'counter', 'flag', 'buffer', etc.
         self.dependencies = []  # локальные зависимости
@@ -26,7 +26,7 @@ class VariableInfo:
         self.cross_module_references = []  # ссылки из других модулей
         
         # Значения
-        self.initial_value = None
+        self.initial_value = None      # начальное значение 
         self.value_range = None
         self.is_constant = False
         self.value_history = []
