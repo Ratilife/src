@@ -1,8 +1,8 @@
 import ast                                              # Импорт модуля для работы с абстрактными синтаксическими деревьями (AST) Python
-from src.wrapper_classes.module_Info import ModuleInfo  # type: ignore
-from src.wrapper_classes.function_Info import FunctionInfo # type: ignore
-from src.wrapper_classes.class_Info import ClassInfo # type: ignore
-
+from wrapper_classes.module_Info import ModuleInfo  # type: ignore
+from wrapper_classes.function_Info import FunctionInfo # type: ignore
+from wrapper_classes.class_Info import ClassInfo # type: ignore
+from wrapper_classes.variable_info import VariableInfo
 def _get_base_name(base):
     """
     Вспомогательная функция для извлечения имени базового класса.
