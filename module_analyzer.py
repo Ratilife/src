@@ -1,7 +1,8 @@
 import ast
 from pathlib import Path
 from typing import Optional
-from analyzer import Analyzer
+from analyzer_old import Analyzer
+from wrapper_classes.module_Info  import ModuleInfo
 class ModuleAnalyzer:
     #TODO ⌛ в разработке: 17.09.2025 
     def __init__(self):
@@ -43,8 +44,17 @@ class ModuleAnalyzer:
         name_module = Path(file_path).name
         with open(file_path, "r", encoding="utf-8") as f:
             tree = ast.parse(f.read(), filename=name_module)
+
+        # Шаг 1: Analyzer создает и заполняет все контейнеры    
         analyzer = Analyzer()
         analyzer.visit(tree)
+
+        # Шаг 2: Создаем ModuleInfo и упаковываем всё вместе
+        module_info = ModuleInfo(name_module)
+        module_info.classes = analyzer.class_infos                      # все классы
+        module_info.functions = analyzer.function_infos                 # все функции
+        module_info.import_analysis.imports = analyzer.import_infos     # импорты
+
     
 
     #Конец Приватные методы для работы с AST
