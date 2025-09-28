@@ -55,11 +55,11 @@ class Analyzer(ast.NodeVisitor):              # Определение клас�
             # Заполняем местоположение 
             var_info.declaration_location = (self.module_name, node.lineno)  
             
-            var_info.usage_count = 1
+            var_info.usage_count = 0
         else:
             # Берем существующую переменную
             var_info = self.existing_variables[var_name]    
-            var_info.usage_count += 1  # увеличиваем счетчик использования      
+               
         
         return var_info 
 
@@ -95,6 +95,60 @@ class Analyzer(ast.NodeVisitor):              # Определение клас�
             'context': self._get_current_context()
         })
 
+    def _handle_attribute_augassign(self, node):
+        """Обрабатывает augmented assignment для атрибутов (self.count += 1)"""
+        attr_name = node.target.attr  # имя атрибута ('count', 'name')
+    
+        # Создаем/получаем VariableInfo для атрибута
+        var_info = self._get_or_create_variable(attr_name, node)
+    
+        op_type = type(node.op).__name__.lower()
+        owner = self._get_attribute_owner(node.target.value)
+    
+        # Записываем операцию
+        var_info.operations.append({
+            'type': f'attribute_augmented_{op_type}',
+            'value': self.value_analyzer.get_value(node.value),
+            'owner': owner,
+            'location': (self.module_name, node.lineno)
+        })
+    
+        # Обновляем использование (НЕ увеличиваем usage_count - это запись)
+        var_info.usage_scope.append({
+            'type': 'write',
+            'operation': f'attribute_augmented_{op_type}',
+            'owner': owner,
+            'location': (self.module_name, node.lineno),
+            'context': self._get_current_context()
+        })
+
+    def _handle_subscript_augassign(self, node):
+        """Обрабатывает augmented assignment для индексов (list[0] += 1)"""
+        collection_name = self._get_collection_name(node.target.value)
+    
+        if collection_name and collection_name in self.existing_variables:
+            var_info = self.existing_variables[collection_name]
+        
+            op_type = type(node.op).__name__.lower()
+            index_info = self.value_analyzer.get_index_info(node.target.slice)
+        
+            # Записываем операцию
+            var_info.operations.append({
+                'type': f'subscript_augmented_{op_type}',
+                'value': self.value_analyzer.get_value(node.value),
+                'index': index_info,
+                'location': (self.module_name, node.lineno)
+            })
+        
+            # Обновляем использование (НЕ увеличиваем usage_count - это запись)
+            var_info.usage_scope.append({
+                'type': 'write',
+                'operation': f'subscript_augmented_{op_type}',
+                'index': index_info,
+                'location': (self.module_name, node.lineno),
+                'context': self._get_current_context()
+            })
+
     def _get_attribute_owner(self, owner_node):
         """
         Определяет владельца атрибута (self, obj, module и т.д.)
@@ -116,7 +170,7 @@ class Analyzer(ast.NodeVisitor):              # Определение клас�
 
     def _handle_subscript_write(self, var_info, node):
         """Обрабатывает запись в индекс"""
-        index_info = self._get_index_info(node.slice)
+        index_info = self.value_analyzer.self.value_analyzer(node.slice)
     
         usage_info = {
             'type': 'subscript_write',
@@ -126,7 +180,7 @@ class Analyzer(ast.NodeVisitor):              # Определение клас�
         }
     
         var_info.usage_scope.append(usage_info)
-        var_info.usage_count += 1
+        #var_info.usage_count += 1
     
         # Записываем операцию
         var_info.operations.append({
@@ -137,7 +191,7 @@ class Analyzer(ast.NodeVisitor):              # Определение клас�
 
     def _handle_subscript_read(self, var_info, node):
         """Обрабатывает чтение по индексу"""
-        index_info = self._get_index_info(node.slice)
+        index_info = self.value_analyzer.get_index_info(node.slice)
     
         usage_info = {
             'type': 'subscript_read',
@@ -151,7 +205,7 @@ class Analyzer(ast.NodeVisitor):              # Определение клас�
 
     def _handle_subscript_delete(self, var_info, node):
         """Обрабатывает удаление по индексу"""
-        index_info = self._get_index_info(node.slice)
+        index_info = self.value_analyzer.get_index_info(node.slice)
     
         usage_info = {
             'type': 'subscript_delete',
@@ -166,28 +220,13 @@ class Analyzer(ast.NodeVisitor):              # Определение клас�
             'index': index_info,
             'location': (self.module_name, node.lineno)
         })
-
-    def _get_index_info(self, slice_node):
-        """Извлекает информацию об индексе/срезе"""
-        if isinstance(slice_node, ast.Index):
-            # Устаревший формат (Python < 3.9)
-            return self.value_analyzer.get_value(slice_node.value)
-        elif isinstance(slice_node, ast.Constant):
-            # Простой индекс: list[0]
-            return slice_node.value
-        elif isinstance(slice_node, ast.Slice):
-            # Срез: list[1:10:2]
-            return {
-                'type': 'slice',
-                'start': self.value_analyzer.get_value(slice_node.lower),
-                'stop': self.value_analyzer.get_value(slice_node.upper),
-                'step': self.value_analyzer.get_value(slice_node.step)
-            }
-        elif isinstance(slice_node, ast.Name):
-            # Переменная как индекс: list[index]
-            return f"variable:{slice_node.id}"
-        else:
-            return "complex_index"
+     
+   
+    def _is_definition_context(self, node):
+        """Проверяет, является ли узел определением (а не использованием)"""
+        # Простая реализация - можно улучшить
+        parent = getattr(node, 'parent', None)
+        return isinstance(parent, (ast.ClassDef, ast.FunctionDef))    
     #------------
 
     def visit_Name(self, node):
@@ -196,13 +235,13 @@ class Analyzer(ast.NodeVisitor):              # Определение клас�
             Определяет: чтение, запись, удаление.
         """
         if node.id in [cls.name for cls in self.class_infos]:
-            pass  # это класс, пропускаем
+            return  # это класс, пропускаем
         
         if node.id in [func.name for func in self.function_infos]:
-            pass  # это функция, пропускаем
+            return  # это функция, пропускаем
 
         if isinstance(node.ctx, ast.Store) and self._is_definition_context(node):
-            pass  # это определение
+            return  # это определение
         
         if node.id in self.existing_variables:
             # Обрабатываем как переменную
@@ -271,15 +310,16 @@ class Analyzer(ast.NodeVisitor):              # Определение клас�
     
         # Случай 1: Простая переменная (x += 5)
         if isinstance(node.target, ast.Name):
+            # Простая переменная: x += 5
             self._handle_variable_augassign(node)
     
         # Случай 2: Атрибут объекта (self.count += 1)
         elif isinstance(node.target, ast.Attribute):
-            self._handle_variable_augassign(node)
+            self._handle_attribute_augassign(node)
     
         # Случай 3: Элемент коллекции (arr[0] += 1)
         elif isinstance(node.target, ast.Subscript):
-            self._handle_variable_augassign(node)
+            self._handle_subscript_augassign(node)
     
         self.generic_visit(node)    
 
@@ -292,7 +332,6 @@ class Analyzer(ast.NodeVisitor):              # Определение клас�
             # Создаем/получаем VariableInfo для атрибута
             var_info = self._get_or_create_variable(attr_name, node)
         
-            # Определяем контекст использования
             usage_info = {
                 'type': 'attribute_write',
                 'location': (self.module_name, node.lineno, node.col_offset),
