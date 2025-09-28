@@ -4,6 +4,7 @@ from wrapper_classes.function_Info import FunctionInfo # type: ignore
 from wrapper_classes.class_Info import ClassInfo # type: ignore
 from wrapper_classes.variable_info import VariableInfo
 from wrapper_classes.imports_info import ImportInfo
+from analyzer.value_analyzer import ValueAnalyzer
 
 
 class Analyzer(ast.NodeVisitor):              # Определение класса Analyzer, наследующего от ast.NodeVisitor для обхода AST
@@ -24,50 +25,69 @@ class Analyzer(ast.NodeVisitor):              # Определение клас�
         self.current_scope = "global"  # Текущая область видимости
         self.scope_stack = []          # Стек для вложенных областей
 
-    def _infer_type(self, value_node):  # TODO убрать, перегружает класс
-        """Определяет тип значения"""
-        if isinstance(value_node, ast.Constant):
-            return type(value_node.value).__name__  # 'int', 'str', 'bool'
-        elif isinstance(value_node, ast.List):
-            return 'list'
-        elif isinstance(value_node, ast.Dict):
-            return 'dict'
-        elif isinstance(value_node, ast.Set):
-            return 'set'
-        elif isinstance(value_node, ast.Tuple):
-            return 'tuple'
-        elif isinstance(value_node, ast.Call):
-            return 'function_call'  # или анализировать глубже
-        else:
-            return 'unknown'
+        self.value_analyzer = ValueAnalyzer()
+    
+    def _get_or_create_variable(self, var_name, node):
+        # ПРОВЕРЯЕМ, существует уже переменная
+        if var_name not in self.existing_variables:
+            # 1. СОЗДАЕМ новую переменную ПЕРВЫМ делом
+            # Создаем только если переменная НОВАЯ
+            var_info = VariableInfo(var_name)
 
-    def _get_value(self, value_node):       # TODO убрать, перегружает класс
-        """Извлекает значение из узла AST"""
-        if isinstance(value_node, ast.Constant):
-            return value_node.value  # 10, "hello", True, None
-    
-        elif isinstance(value_node, ast.List):
-            return [self._get_value(element) for element in value_node.elts]
-    
-        elif isinstance(value_node, ast.Dict):
-            return {self._get_value(k): self._get_value(v) 
-                for k, v in zip(value_node.keys, value_node.values)}
-    
-        elif isinstance(value_node, ast.Tuple):
-            return tuple(self._get_value(element) for element in value_node.elts)
-    
-        elif isinstance(value_node, ast.Name):
-            return f"variable:{value_node.id}"  # ссылка на другую переменную
-    
-        elif isinstance(value_node, ast.Call):
-            return f"call:{ast.unparse(value_node)}"  # вызов функции
-    
-        elif isinstance(value_node, ast.BinOp):
-            return "expression"  # сложное выражение
-    
+            # 2. СОХРАНЯЕМ в словарь
+            self.existing_variables[var_name] = var_info
+            self.variable_infos.append(var_info)    # ← ДОБАВЛЯЕМ!
+                    
+            # 3. ЗАПОЛНЯЕМ информацию о  Области видимости, в которой объявлена переменная
+            if self.current_class and self.current_function is None:
+                var_info.scope = "class_attribute"     # атрибут класса
+            elif self.current_class and self.current_function:
+                var_info.scope = "instance_attribute"  # атрибут экземпляра  
+            elif self.current_function:
+                var_info.scope = "local_variable"      # локальная переменная
+            else:
+                var_info.scope = "global_variable"     # глобальная переменная
+
+            # Заполняем местоположение 
+            var_info.declaration_location = (self.module_name, node.lineno)  
+            
+            var_info.usage_count = 1
         else:
-            return "unknown_value"
-    
+            # Берем существующую переменную
+            var_info = self.existing_variables[var_name]    
+            var_info.usage_count += 1  # увеличиваем счетчик использования      
+        
+        return var_info 
+
+
+    # Метод для обработки узлов присваивания (переменные)
+    def visit_Assign(self, node): 
+        for target in node.targets:
+            if isinstance(target, ast.Name):                                                     
+                var_info = self._get_or_create_variable(target.id, node)
+                
+                # ОПРЕДЕЛЯЕМ ТИП из правой части (node.value)
+                var_info.type = self.value_analyzer.infer_type(node.value)          
+                var_info.initial_value = self.value_analyzer.get_value(node.value)    #  ←  нужно изменить обращение к методу
+                var_info.initialization_location = (self.module_name, node.lineno)  
+
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node):
+         if isinstance(node.target, ast.Name):
+            var_info = self._get_or_create_variable(node.target.id, node)
+            
+            # Заполняем ТОЛЬКО специфичные для AnnAssign поля
+            var_info.type_annotation = ast.unparse(node.annotation)
+
+            if node.value is not None:  # если есть присваивание: x: int = 10
+                var_info.type = self.value_analyzer.infer_type(node.value)
+                var_info.initial_value = self.value_analyzer.get_value(node.value)
+                var_info.initialization_location = (self.module_name, node.lineno)
+            
+            self.variable_infos.append(var_info)  # ← ДОБАВЛЯЕМ!
+                        
+
     # Метод для обработки узлов импорта (import ...)
     def visit_Import(self, node):
         import_info = ImportInfo()
@@ -79,55 +99,7 @@ class Analyzer(ast.NodeVisitor):              # Определение клас�
     def visit_ImportFrom(self, node):
         pass                            
 
-    # Метод для обработки узлов присваивания (переменные)
-    def visit_Assign(self, node): 
-        for target in node.targets:
-            if isinstance(target, ast.Name):                                                     
-                var_name = target.id
-                # ПРОВЕРЯЕМ, существует уже переменная
-                if var_name not in self.existing_variables:
-                    # 1. СОЗДАЕМ новую переменную ПЕРВЫМ делом
-                    # Создаем только если переменная НОВАЯ
-                    var_info = VariableInfo(var_name)
-
-                    # 2. СОХРАНЯЕМ в словарь
-                    self.existing_variables[var_name] = var_info
-                    self.variable_infos.append(var_info)    # ← ДОБАВЛЯЕМ!
-                    
-                    # 3. ЗАПОЛНЯЕМ информацию
-                    if self.current_class and self.current_function is None:
-                        var_info.scope = "class_attribute"     # атрибут класса
-                    elif self.current_class and self.current_function:
-                        var_info.scope = "instance_attribute"  # атрибут экземпляра  
-                    elif self.current_function:
-                        var_info.scope = "local_variable"      # локальная переменная
-                    else:
-                        var_info.scope = "global_variable"     # глобальная переменная
-
-                    # ОПРЕДЕЛЯЕМ ТИП из правой части (node.value)
-                    var_info.type = self._infer_type(node.value)
-
-                    # Заполняем местоположение 
-                    var_info.declaration_location = (self.module_name, node.lineno)  
-                    var_info.initialization_location = (self.module_name, node.lineno)
-                    var_info.usage_count = 1
-            else:
-                # Берем существующую переменную
-                var_info = self.existing_variables[var_name]    
-                var_info.usage_count += 1  # увеличиваем счетчик использования
-            
-            var_info.initial_value = self._get_value(node.value)    #  ←  нужно изменить обращение к методу
-
-        self.generic_visit(node)
-
-    def visit_AnnAssign(self, node):
-         if isinstance(node.target, ast.Name):
-            var_info = VariableInfo(node.target.id)
-            # ... заполняем + аннотации ...
-            self.variable_infos.append(var_info)  # ← ДОБАВЛЯЕМ!
-                    
-
-
+    
     # Метод для обработки определений функций
     def visit_FunctionDef(self, node):                                  
         # СОХРАНЯЕМ предыдущий контекст
