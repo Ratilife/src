@@ -47,3 +47,27 @@ class ValueAnalyzer:
     
         else:
             return "unknown_value"
+        
+
+    def get_index_info(self, slice_node):
+        """Извлекает информацию об индексе/срезе"""
+        if isinstance(slice_node, ast.Index):
+            # Устаревший формат (Python < 3.9)
+            return self.value_analyzer.get_value(slice_node.value)
+        elif isinstance(slice_node, ast.Constant):
+            # Простой индекс: list[0]
+            return slice_node.value
+        elif isinstance(slice_node, ast.Slice):
+            # Срез: list[1:10:2]
+            return {
+                'type': 'slice',
+                'start': self.value_analyzer.get_value(slice_node.lower),
+                'stop': self.value_analyzer.get_value(slice_node.upper),
+                'step': self.value_analyzer.get_value(slice_node.step)
+            }
+        elif isinstance(slice_node, ast.Name):
+            # Переменная как индекс: list[index]
+            return f"variable:{slice_node.id}"
+        else:
+            return "complex_index"
+            
