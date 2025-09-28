@@ -74,7 +74,7 @@ class Analyzer(ast.NodeVisitor):              # Определение клас�
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node):
-         if isinstance(node.target, ast.Name):
+        if isinstance(node.target, ast.Name):
             var_info = self._get_or_create_variable(node.target.id, node)
             
             # Заполняем ТОЛЬКО специфичные для AnnAssign поля
@@ -85,7 +85,7 @@ class Analyzer(ast.NodeVisitor):              # Определение клас�
                 var_info.initial_value = self.value_analyzer.get_value(node.value)
                 var_info.initialization_location = (self.module_name, node.lineno)
             
-            self.variable_infos.append(var_info)  # ← ДОБАВЛЯЕМ!
+        self.generic_visit(node)    
                         
 
     # Метод для обработки узлов импорта (import ...)
