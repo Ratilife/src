@@ -170,7 +170,7 @@ class Analyzer(ast.NodeVisitor):              # Определение клас�
 
     def _handle_subscript_write(self, var_info, node):
         """Обрабатывает запись в индекс"""
-        index_info = self.value_analyzer.self.value_analyzer(node.slice)
+        index_info = self.value_analyzer.get_index_info(node.slice)
     
         usage_info = {
             'type': 'subscript_write',
@@ -392,14 +392,61 @@ class Analyzer(ast.NodeVisitor):              # Определение клас�
 
     # Метод для обработки узлов импорта (import ...)
     def visit_Import(self, node):
-        import_info = ImportInfo()
-        import_info.module_name = node.names[0].name
-        self.import_infos.append(import_info)
+        for alias in node.names:
+            import_info = ImportInfo()
+        
+            # Базовые характеристики
+            import_info.import_type = 'import'
+            import_info.module_name = alias.name
+            import_info.imported_objects = [alias.name]
+            import_info.location = (self.module_name, node.lineno)
+        
+            # Типы импортов
+            import_info.has_alias = alias.asname is not None
+            import_info.is_multiple_import = len(node.names) > 1
+        
+            # Контекст
+            import_info.context = self._get_import_context()
+            import_info.parent_scope = self._get_current_context()
+            import_info.nesting_level = len(self.scope_stack)
+        
+            self.import_infos.append(import_info)
+    
         self.generic_visit(node)
 
     # Метод для обработки узлов импорта из модуля (from ... import ...)
     def visit_ImportFrom(self, node):
-        pass                            
+        import_info = ImportInfo()
+    
+        # Базовые характеристики
+        import_info.import_type = 'import_from'
+        import_info.module_name = node.module
+        import_info.location = (self.module_name, node.lineno)
+    
+        # Относительные импорты
+        if node.level > 0:
+            import_info.is_relative_import = True
+            import_info.relative_level = node.level
+            import_info.import_category = self._get_relative_category(node.level)
+        else:
+            import_info.is_absolute_import = True
+    
+        # Импортируемые объекты
+        for alias in node.names:
+            if alias.name == '*':
+                import_info.is_star_import = True
+            import_info.imported_objects.append({
+                'name': alias.name,
+                'alias': alias.asname
+            })
+    
+        # Контекст и дополнительные поля
+        import_info.context = self._get_import_context()
+        import_info.is_conditional = self._detect_conditional_import(node)
+        import_info.is_multiple_import = len(node.names) > 1
+    
+        self.import_infos.append(import_info)
+        self.generic_visit(node)                       
 
     
     # Метод для обработки определений функций

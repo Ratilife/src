@@ -53,7 +53,7 @@ class ValueAnalyzer:
         """Извлекает информацию об индексе/срезе"""
         if isinstance(slice_node, ast.Index):
             # Устаревший формат (Python < 3.9)
-            return self.value_analyzer.get_value(slice_node.value)
+            return self.get_value(slice_node.value)
         elif isinstance(slice_node, ast.Constant):
             # Простой индекс: list[0]
             return slice_node.value
