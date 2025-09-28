@@ -2,40 +2,40 @@ from typing import List, Dict, Any, Optional, Set
 
 class VariableInfo:
     def __init__(self, name):
-        self.name = name        # Имя
-        self.type = None        # Тип    
-        self.type_annotation = None  # статические аннотации типов
-        self.scope = None  # масштаб: 'global', 'local', 'class', 'instance'
-        self.access_modifier = None  # модификатор доступа: 'public', 'protected', 'private'
+        self.name = name        # Имя                                                              ← _get_or_create_variable 
+        self.type = None        # Тип                                                              ←visit_Assign 
+        self.type_annotation = None  # статические аннотации типов                                 ← visit_AnnAssign 
+        self.scope = None  # масштаб: 'global', 'local', 'class', 'instance'                       ← _get_or_create_variable 
+        self.access_modifier = None  # модификатор доступа: 'public', 'protected', 'private'       ← _get_or_create_variable 
         
         # Жизненный цикл
-        self.declaration_location = None  # местонахождение (file, line, module)
-        self.initialization_location = None  # местоположение инициализации (file, line, module)
-        self.usage_scope = []  # области где используется
-        self.lifetime_info = {}
+        self.declaration_location = None  # местонахождение (file, line, module)                   ← _get_or_create_variable 
+        self.initialization_location = None  # местоположение инициализации (file, line, module)   ← visit_AnnAssign (если есть присваивание)
+        self.usage_scope = []    # области где используется                                        ← _get_or_create_variable 
+        self.lifetime_info = {}  # Время жизни (определяется по использованиям)                    ←visit_Assign 
         
         # Использование
-        self.usage_count = 0    # Счетчик показывает, сколько раз переменная была прочитана или изменена
-        self.operations = []  # список операций
-        self.usage_pattern = None  # 'counter', 'flag', 'buffer', etc.
-        self.dependencies = []  # локальные зависимости
+        self.usage_count = 0    # Счетчик показывает, сколько раз переменная была прочитана или изменена ← _get_or_create_variable 
+        self.operations = []  # список операций                                                    ← _get_or_create_variable 
+        self.usage_pattern = None  # 'counter', 'flag', 'buffer', etc.                             ←visit_Assign
+        self.dependencies = []  # локальные зависимости                                            ← visit_AnnAssign
         
         # Межмодульные связи
-        self.imported_from = None  # если переменная импортирована
-        self.exported_to = []  # модули, куда экспортируется
-        self.cross_module_references = []  # ссылки из других модулей
+        self.imported_from = None  # если переменная импортирована                                 ← _get_or_create_variable 
+        self.exported_to = []  # модули, куда экспортируется                                       ← _get_or_create_variable 
+        self.cross_module_references = []  # ссылки из других модулей                              ← _get_or_create_variable 
         
         # Значения
-        self.initial_value = None      # начальное значение 
-        self.value_range = None
-        self.is_constant = False
-        self.value_history = []
+        self.initial_value = None      # начальное значение                                        ←visit_Assign
+        self.value_range = None        # диапазон значений                                         ←visit_Assign
+        self.is_constant = False       # флаг константности                                        ← visit_AnnAssign 
+        self.value_history = []        # история изменений                                         ←visit_Assign
         
         # Декораторы и аннотации
-        self.decorators = []  # декораторы для переменных (например, @property)
-        self.annotations = {}  # дополнительные аннотации
+        self.decorators = []  # декораторы для переменных (например, @property)                    ← visit_AnnAssign
+        self.annotations = {}  # дополнительные аннотации                                          ← visit_AnnAssign
         
         # Связи
-        self.related_variables = []  # связанные переменные
-        self.parent_variable = None  # для наследования
-        self.overrides = None  # если переопределяет переменную родителя
+        self.related_variables = []  # связанные переменные                                        ← _get_or_create_variable  
+        self.parent_variable = None  # для наследования                                            ← _get_or_create_variable 
+        self.overrides = None  # если переопределяет переменную родителя                           ← _get_or_create_variable 
