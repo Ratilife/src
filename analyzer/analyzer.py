@@ -34,11 +34,15 @@ class Analyzer(ast.NodeVisitor):              # Определение клас�
             # Создаем только если переменная НОВАЯ
             var_info = VariableInfo(var_name)
 
-            # 2. СОХРАНЯЕМ в словарь
+            # ИНИЦИАЛИЗИРУЕМ пустой список для использования
+            var_info.usage_scope = []  # ← будет заполняться в visit_Name
+            var_info.operations = []   # ← для операций типа +=, -= и т.д.
+
+            #  СОХРАНЯЕМ в словарь
             self.existing_variables[var_name] = var_info
             self.variable_infos.append(var_info)    # ← ДОБАВЛЯЕМ!
                     
-            # 3. ЗАПОЛНЯЕМ информацию о  Области видимости, в которой объявлена переменная
+            #  ЗАПОЛНЯЕМ информацию о  Области видимости, в которой объявлена переменная
             if self.current_class and self.current_function is None:
                 var_info.scope = "class_attribute"     # атрибут класса
             elif self.current_class and self.current_function:
@@ -59,6 +63,181 @@ class Analyzer(ast.NodeVisitor):              # Определение клас�
         
         return var_info 
 
+    def _get_current_context(self):
+        """Возвращает текущий контекст (функция, класс, модуль)"""
+        context = {
+            'module': self.module_name,
+            'class': self.current_class.name if self.current_class else None,
+            'function': self.current_function.name if self.current_function else None,
+            'scope': self.current_scope
+        }
+        return context
+    
+    def _handle_variable_augassign(self, node):
+        """Обрабатывает augmented assignment для простых переменных"""
+        var_name = node.target.id
+        var_info = self._get_or_create_variable(var_name, node)
+    
+        op_type = type(node.op).__name__.lower()
+    
+        # Записываем операцию
+        var_info.operations.append({
+            'type': f'augmented_{op_type}',
+            'value': self.value_analyzer.get_value(node.value),
+            'location': (self.module_name, node.lineno)
+        })
+    
+        # Обновляем использование
+        var_info.usage_scope.append({
+            'type': 'write',
+            'operation': f'augmented_{op_type}',
+            'location': (self.module_name, node.lineno),
+            'context': self._get_current_context()
+        })
+
+    def _get_attribute_owner(self, owner_node):
+        """
+        Определяет владельца атрибута (self, obj, module и т.д.)
+        """
+        if isinstance(owner_node, ast.Name):
+            return owner_node.id  # 'self', 'obj', 'module'
+        elif isinstance(owner_node, ast.Attribute):
+            return ast.unparse(owner_node)  # 'obj.subobj'
+        else:
+            return "unknown"    
+
+    def _get_collection_name(self, value_node):
+        """Извлекает имя коллекции из узла"""
+        if isinstance(value_node, ast.Name):
+            return value_node.id  # list, dict, arr
+        elif isinstance(value_node, ast.Attribute):
+            return value_node.attr  # obj.data, self.items
+        return None
+
+    def _handle_subscript_write(self, var_info, node):
+        """Обрабатывает запись в индекс"""
+        index_info = self._get_index_info(node.slice)
+    
+        usage_info = {
+            'type': 'subscript_write',
+            'location': (self.module_name, node.lineno, node.col_offset),
+            'context': self._get_current_context(),
+            'index': index_info
+        }
+    
+        var_info.usage_scope.append(usage_info)
+        var_info.usage_count += 1
+    
+        # Записываем операцию
+        var_info.operations.append({
+            'type': 'subscript_assignment',
+            'index': index_info,
+            'location': (self.module_name, node.lineno)
+        })
+
+    def _handle_subscript_read(self, var_info, node):
+        """Обрабатывает чтение по индексу"""
+        index_info = self._get_index_info(node.slice)
+    
+        usage_info = {
+            'type': 'subscript_read',
+            'location': (self.module_name, node.lineno, node.col_offset),
+            'context': self._get_current_context(),
+            'index': index_info
+        }
+    
+        var_info.usage_scope.append(usage_info)
+        var_info.usage_count += 1
+
+    def _handle_subscript_delete(self, var_info, node):
+        """Обрабатывает удаление по индексу"""
+        index_info = self._get_index_info(node.slice)
+    
+        usage_info = {
+            'type': 'subscript_delete',
+            'location': (self.module_name, node.lineno, node.col_offset),
+            'context': self._get_current_context(),
+            'index': index_info
+        }
+    
+        var_info.usage_scope.append(usage_info)
+        var_info.operations.append({
+            'type': 'subscript_deletion',
+            'index': index_info,
+            'location': (self.module_name, node.lineno)
+        })
+
+    def _get_index_info(self, slice_node):
+        """Извлекает информацию об индексе/срезе"""
+        if isinstance(slice_node, ast.Index):
+            # Устаревший формат (Python < 3.9)
+            return self.value_analyzer.get_value(slice_node.value)
+        elif isinstance(slice_node, ast.Constant):
+            # Простой индекс: list[0]
+            return slice_node.value
+        elif isinstance(slice_node, ast.Slice):
+            # Срез: list[1:10:2]
+            return {
+                'type': 'slice',
+                'start': self.value_analyzer.get_value(slice_node.lower),
+                'stop': self.value_analyzer.get_value(slice_node.upper),
+                'step': self.value_analyzer.get_value(slice_node.step)
+            }
+        elif isinstance(slice_node, ast.Name):
+            # Переменная как индекс: list[index]
+            return f"variable:{slice_node.id}"
+        else:
+            return "complex_index"
+    #------------
+
+    def visit_Name(self, node):
+        """
+            Обрабатывает все упоминания переменных по имени.
+            Определяет: чтение, запись, удаление.
+        """
+        if node.id in [cls.name for cls in self.class_infos]:
+            pass  # это класс, пропускаем
+        
+        if node.id in [func.name for func in self.function_infos]:
+            pass  # это функция, пропускаем
+
+        if isinstance(node.ctx, ast.Store) and self._is_definition_context(node):
+            pass  # это определение
+        
+        if node.id in self.existing_variables:
+            # Обрабатываем как переменную
+            var_info = self.existing_variables[node.id]
+        
+         # Определяем тип операции
+            usage_info = {
+                'location': (self.module_name, node.lineno, node.col_offset),
+                'context': self._get_current_context(),
+                'timestamp': len(var_info.usage_scope)  # порядковый номер использования
+            }
+
+            if isinstance(node.ctx, ast.Load):
+                usage_info['type'] = 'read'
+                var_info.usage_count += 1
+
+            elif isinstance(node.ctx, ast.Store):
+                usage_info['type'] = 'write'
+                # usage_count НЕ увеличиваем - уже сделано в visit_Assign   
+
+            elif isinstance(node.ctx, ast.Del):
+                usage_info['type'] = 'delete'
+                var_info.lifetime_info['deleted_at'] = usage_info['location']    
+
+            # Добавляем информацию об использовании
+            var_info.usage_scope.append(usage_info)    
+
+            # Логируем операцию
+            var_info.operations.append({
+                'type': 'name_reference',
+                'context': node.ctx.__class__.__name__,
+                'location': usage_info['location']
+            })
+    
+        self.generic_visit(node)
 
     # Метод для обработки узлов присваивания (переменные)
     def visit_Assign(self, node): 
@@ -86,7 +265,91 @@ class Analyzer(ast.NodeVisitor):              # Определение клас�
                 var_info.initialization_location = (self.module_name, node.lineno)
             
         self.generic_visit(node)    
-                        
+
+    def  visit_AugAssign (self, node):
+        """Обрабатывает операции типа +=, -=, *=, /= для переменных и атрибутов"""
+    
+        # Случай 1: Простая переменная (x += 5)
+        if isinstance(node.target, ast.Name):
+            self._handle_variable_augassign(node)
+    
+        # Случай 2: Атрибут объекта (self.count += 1)
+        elif isinstance(node.target, ast.Attribute):
+            self._handle_variable_augassign(node)
+    
+        # Случай 3: Элемент коллекции (arr[0] += 1)
+        elif isinstance(node.target, ast.Subscript):
+            self._handle_variable_augassign(node)
+    
+        self.generic_visit(node)    
+
+    def visit_Attribute(self, node):
+        """Обрабатывает obj.attr, self.value, module.function"""
+        attr_name = node.attr  # имя атрибута ('count', 'name', 'value')
+    
+        # Обрабатываем только присваивания в атрибуты (obj.attr = value)
+        if isinstance(node.ctx, ast.Store):
+            # Создаем/получаем VariableInfo для атрибута
+            var_info = self._get_or_create_variable(attr_name, node)
+        
+            # Определяем контекст использования
+            usage_info = {
+                'type': 'attribute_write',
+                'location': (self.module_name, node.lineno, node.col_offset),
+                'context': self._get_current_context(),
+                'attribute_of': self._get_attribute_owner(node.value)  # кто владелец
+            }
+        
+            var_info.usage_scope.append(usage_info)
+        
+            # Записываем операцию
+            var_info.operations.append({
+                'type': 'attribute_assignment',
+                'owner': self._get_attribute_owner(node.value),
+                'location': (self.module_name, node.lineno)
+            })
+    
+        # Также обрабатываем чтение атрибутов (value = obj.attr)
+        elif isinstance(node.ctx, ast.Load):
+            if attr_name in self.existing_variables:
+                var_info = self.existing_variables[attr_name]
+            
+            usage_info = {
+                'type': 'attribute_read',
+                'location': (self.module_name, node.lineno, node.col_offset),
+                'context': self._get_current_context(),
+                'attribute_of': self._get_attribute_owner(node.value)
+            }
+            
+            var_info.usage_scope.append(usage_info)
+            var_info.usage_count += 1
+    
+        self.generic_visit(node)
+
+
+
+    def visit_Subscript(self, node):
+        """
+        Обрабатывает операции с индексами: list[index], dict[key], obj[slice]
+        """
+        # Получаем имя коллекции (если это простая переменная)
+        collection_name = self._get_collection_name(node.value)
+    
+        if collection_name and collection_name in self.existing_variables:
+            var_info = self.existing_variables[collection_name]
+        
+            # Определяем тип операции
+            if isinstance(node.ctx, ast.Store):
+                # Запись в индекс: list[0] = value
+                self._handle_subscript_write(var_info, node)
+            elif isinstance(node.ctx, ast.Load):
+                # Чтение по индексу: x = list[0]
+                self._handle_subscript_read(var_info, node)
+            elif isinstance(node.ctx, ast.Del):
+                # Удаление по индексу: del dict[key]
+                self._handle_subscript_delete(var_info, node)
+        
+        self.generic_visit(node)
 
     # Метод для обработки узлов импорта (import ...)
     def visit_Import(self, node):
